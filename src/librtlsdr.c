@@ -1436,6 +1436,53 @@ int rtlsdr_get_index_by_serial(const char *serial)
 	return -3;
 }
 
+int rtlsdr_sleep()
+{
+	int i;
+	libusb_device **list;
+	libusb_device *device = NULL;
+	struct libusb_device_descriptor dd;
+	ssize_t cnt;
+
+	rtlsdr_dev_t *dev = malloc(sizeof(rtlsdr_dev_t));
+	memset(dev, 0, sizeof(rtlsdr_dev_t));
+	libusb_init(&dev->ctx);
+	dev->dev_lost = 1;
+
+	cnt = libusb_get_device_list(dev->ctx, &list);
+
+	for (i = 0; i < cnt; i++) {
+		device = list[i];
+
+		libusb_get_device_descriptor(list[i], &dd);
+
+		if (find_known_device(dd.idVendor, dd.idProduct)) {
+			break;
+		}
+
+		device = NULL;
+	}
+	libusb_free_device_list(list, 1);
+
+	if(device == NULL) {
+		fprintf(stderr, "No supported devices found.\n");
+		return -1;
+	}
+
+	libusb_open(device, &dev->devh);
+	libusb_claim_interface(dev->devh, 0);
+
+	rtlsdr_write_reg(dev, SYSB, DEMOD_CTL, 0xe8, 1); //+65ma
+	rtlsdr_demod_write_reg(dev, 1, 0x01, 0x18, 1); //set_i2c_repeater
+	rtlsdr_i2c_write_reg(dev, R820T_I2C_ADDR, 0x05, 0xa0); //-44ma
+	rtlsdr_i2c_write_reg(dev, R820T_I2C_ADDR, 0x09, 0xc0); //-20ma
+	rtlsdr_i2c_write_reg(dev, R820T_I2C_ADDR, 0x06, 0xb1); //- 8ma
+	rtlsdr_i2c_write_reg(dev, R820T_I2C_ADDR, 0x17, 0xf4); //- 2ma
+	rtlsdr_write_reg(dev, SYSB, DEMOD_CTL, 0x20, 1); //-65ma
+
+	return 0;
+}
+
 int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 {
 	int r;
